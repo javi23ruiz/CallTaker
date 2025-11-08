@@ -71,28 +71,52 @@ with chat_container:
 
 # Chat input
 if prompt := st.chat_input("Type your complaint or question here..."):
-    # Add user message to chat history
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Check if we've already processed this exact message (to avoid duplicate on rerun)
+    last_two = st.session_state.messages[-2:] if len(st.session_state.messages) >= 2 else []
+    already_processed = (
+        len(last_two) == 2 and 
+        last_two[0].get("role") == "user" and 
+        last_two[0].get("content") == prompt and
+        last_two[1].get("role") == "assistant"
+    )
     
-    # Display user message
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
-    # Process through agent
-    with st.chat_message("assistant"):
-        with st.spinner("Processing..."):
-            try:
-                response, updated_state = process_user_message(
-                    prompt, 
-                    st.session_state.agent_state
-                )
-                st.session_state.agent_state = updated_state
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            except Exception as e:
-                error_msg = f"Error: {str(e)}. Please check your .env file has OPENAI_API_KEY set."
-                st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+    if not already_processed:
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Process through agent
+        with st.chat_message("assistant"):
+            with st.spinner("Processing..."):
+                try:
+                    response, updated_state = process_user_message(
+                        prompt, 
+                        st.session_state.agent_state
+                    )
+                    # Update state immediately - ensure all fields are present
+                    st.session_state.agent_state = {
+                        "complaint": updated_state.get("complaint"),
+                        "mobile_number": updated_state.get("mobile_number"),
+                        "confirmation": updated_state.get("confirmation"),
+                        "submitted": updated_state.get("submitted", False)
+                    }
+                    st.markdown(response)
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    # Force rerun to update sidebar with new state
+                    st.rerun()
+                except Exception as e:
+                    error_msg = f"Error: {str(e)}. Please check your .env file has OPENAI_API_KEY set."
+                    st.error(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+    else:
+        # Just display the messages (already processed)
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        with st.chat_message("assistant"):
+            st.markdown(st.session_state.messages[-1]["content"])
 
 # Clear chat button
 if st.button("Clear Chat"):

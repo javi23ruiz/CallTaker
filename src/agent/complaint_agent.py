@@ -67,23 +67,32 @@ Complaint:"""
     
     # Extract mobile number from current message if not already collected
     if not mobile_number and last_user_message:
-        # Let LLM decide if a phone number was provided
-        extract_prompt = f"""Analyze this message and determine if the user provided a phone/mobile number. 
-If a phone number is present, extract it and return ONLY the digits (no spaces, dashes, or words).
+        # First, try to extract any sequence of digits from the message
+        digits_in_message = ''.join(filter(str.isdigit, last_user_message))
+        
+        # If we found digits and it looks like a phone number (5+ digits), use it
+        # Otherwise, ask the LLM to determine if there's a phone number
+        if digits_in_message and len(digits_in_message) >= 5:
+            # We found a reasonable number of digits, likely a phone number
+            updates["mobile_number"] = digits_in_message
+        else:
+            # Let LLM decide if a phone number was provided (in case it's in text format)
+            extract_prompt = f"""Analyze this message and determine if the user provided a phone/mobile number in words (e.g., "call me at...", "my number is..."). 
+If a phone number is mentioned in text, extract it and return ONLY the digits (no spaces, dashes, or words).
 If no phone number is present, return exactly "None".
 
 Message: {last_user_message}
 Phone number (digits only, or "None"):"""
-        response = llm.invoke(extract_prompt)
-        extracted = response.content.strip()
-        
-        # Check if LLM found a phone number
-        if extracted.lower() != "none" and extracted:
-            # Clean to get only digits
-            digits = ''.join(filter(str.isdigit, extracted))
-            # If we have digits, use them (let LLM decide validity)
-            if digits:
-                updates["mobile_number"] = digits
+            response = llm.invoke(extract_prompt)
+            extracted = response.content.strip()
+            
+            # Check if LLM found a phone number in text
+            if extracted.lower() != "none" and extracted:
+                # Clean to get only digits
+                text_digits = ''.join(filter(str.isdigit, extracted))
+                # If we have digits, use them
+                if text_digits and len(text_digits) >= 5:
+                    updates["mobile_number"] = text_digits
     
     # Immediately update state with any extractions
     if updates:
@@ -124,7 +133,7 @@ Phone number (digits only, or "None"):"""
         elif isinstance(msg, AIMessage):
             conversation_history.append(f"{msg.content}")
     
-    system_prompt = """You are a helpful customer service agent collecting complaint information. Be friendly and conversational."""
+    system_prompt = """You are Camila's Call Taker AI Assistant. Your task is to help customers gather and submit information about their complaints to the system. Be professional and conversational while collecting complaint details and contact information."""
     
     if not current_complaint:
         instruction = "Ask the customer to describe their complaint."
@@ -139,11 +148,24 @@ Phone number (digits only, or "None"):"""
         instruction = "The customer declined the summary. Ask if they want to start over or modify the information."
         use_mini = True  # Simple follow-up
     elif current_confirmation is True and not current_state.get("submitted", False):
-        instruction = "The customer confirmed. Thank them and inform them that the complaint will be submitted."
+        instruction = "The customer confirmed. Thank them warmly and inform them that the complaint has been submitted successfully. Then offer to help them create a new complaint if needed."
         use_mini = True  # Simple acknowledgment
+        # Mark as submitted and reset for next complaint
+        updates["submitted"] = True
+        updates["complaint"] = None  # Reset complaint for next one
+        updates["confirmation"] = None  # Reset confirmation for next one
+        # Keep mobile_number as it's the same customer
+    elif current_state.get("submitted", False) and not current_complaint:
+        # Post-submission: offer to help with new complaint or end conversation
+        instruction = "The complaint was already submitted. Ask if they have another issue or complaint they'd like to report, or if there's anything else you can help with."
+        use_mini = True
     else:
         instruction = "Continue the conversation naturally based on the context."
         use_mini = True
+    
+    # Apply any additional updates before generating response
+    if updates:
+        state = {**state, **updates}
     
     prompt = f"""{system_prompt}
 
@@ -179,7 +201,7 @@ Generate a natural, friendly response:"""
     # Add assistant response to messages
     new_messages = state.get("messages", []) + [AIMessage(content=response_text)]
     
-    # Return updated state with all changes
+    # Return updated state with all changes (including the submitted flag and reset fields)
     return {
         **state,
         "messages": new_messages
