@@ -13,7 +13,12 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 if "agent_state" not in st.session_state:
-    st.session_state.agent_state = None
+    st.session_state.agent_state = {
+        "complaint": None,
+        "mobile_number": None,
+        "confirmation": None,
+        "submitted": False
+    }
 
 # Custom CSS for better UI
 st.markdown("""
@@ -39,33 +44,20 @@ st.markdown('<div class="main-header">📞 CallTaker - Customer Complaints Agent
 
 # Sidebar for agent state
 with st.sidebar:
-    st.header("Agent Status")
+    st.header("Agent State")
     
-    if st.session_state.agent_state:
-        st.subheader("Collected Information")
-        complaint = st.session_state.agent_state.get("complaint")
-        mobile = st.session_state.agent_state.get("mobile_number")
-        summary = st.session_state.agent_state.get("summary")
-        confirmed = st.session_state.agent_state.get("confirmation")
-        submitted = st.session_state.agent_state.get("submitted", False)
-        
-        st.write(f"**Complaint:** {'✅ Collected' if complaint else '❌ Not collected'}")
-        st.write(f"**Mobile Number:** {'✅ Collected' if mobile else '❌ Not collected'}")
-        st.write(f"**Summary:** {'✅ Generated' if summary else '⏳ Pending'}")
-        st.write(f"**Confirmation:** {'✅ Yes' if confirmed else '❌ No' if confirmed is False else '⏳ Pending'}")
-        st.write(f"**Submitted:** {'✅ Yes' if submitted else '❌ No'}")
-        
-        if complaint:
-            with st.expander("View Complaint"):
-                st.text(complaint)
-        if mobile:
-            with st.expander("View Mobile"):
-                st.text(mobile)
-        if summary:
-            with st.expander("View Summary"):
-                st.text(summary)
+    # Always display state dict if it exists
+    if st.session_state.agent_state is not None:
+        # Display state dict without emojis
+        state_dict = {
+            "complaint": st.session_state.agent_state.get("complaint"),
+            "mobile_number": st.session_state.agent_state.get("mobile_number"),
+            "confirmation": st.session_state.agent_state.get("confirmation"),
+            "submitted": st.session_state.agent_state.get("submitted", False)
+        }
+        st.json(state_dict)
     else:
-        st.info("Start a conversation to see agent status")
+        st.info("Start a conversation to see agent state")
 
 # Main chat interface
 st.subheader("Chat with the Agent")
@@ -105,6 +97,11 @@ if prompt := st.chat_input("Type your complaint or question here..."):
 # Clear chat button
 if st.button("Clear Chat"):
     st.session_state.messages = []
-    st.session_state.agent_state = None
+    st.session_state.agent_state = {
+        "complaint": None,
+        "mobile_number": None,
+        "confirmation": None,
+        "submitted": False
+    }
     st.rerun()
 

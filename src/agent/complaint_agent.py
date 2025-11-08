@@ -14,9 +14,16 @@ from langgraph.graph.message import add_messages
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI model
+# Initialize OpenAI models
 llm = ChatOpenAI(
     model="gpt-4o",
+    temperature=0.7,
+    api_key=os.getenv("OPENAI_API_KEY")
+)
+
+# Mini model for simple follow-up questions
+llm_mini = ChatOpenAI(
+    model="gpt-4o-mini",
     temperature=0.7,
     api_key=os.getenv("OPENAI_API_KEY")
 )
@@ -27,7 +34,6 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     complaint: Optional[str]
     mobile_number: Optional[str]
-    summary: Optional[str]
     confirmation: Optional[bool]
     submitted: bool
 
@@ -37,7 +43,6 @@ def process_conversation(state: AgentState) -> AgentState:
     messages = state["messages"]
     complaint = state.get("complaint")
     mobile_number = state.get("mobile_number")
-    summary = state.get("summary")
     confirmation = state.get("confirmation")
     
     # Get the last user message
@@ -49,7 +54,7 @@ def process_conversation(state: AgentState) -> AgentState:
     
     updates = {}
     
-    # Extract complaint if not already collected
+    # Extract complaint from current message if not already collected
     if not complaint and last_user_message:
         extract_prompt = f"""Extract the customer complaint from this message. Return ONLY the complaint text, or "None" if no complaint is present.
 
@@ -60,64 +65,56 @@ Complaint:"""
         if extracted.lower() != "none" and len(extracted) > 10:
             updates["complaint"] = extracted
     
-    # Extract mobile number if not already collected
+    # Extract mobile number from current message if not already collected
     if not mobile_number and last_user_message:
-        extract_prompt = f"""Extract the phone/mobile number from this message. Return ONLY digits (no spaces/dashes), or "None" if no number is present.
+        # Let LLM decide if a phone number was provided
+        extract_prompt = f"""Analyze this message and determine if the user provided a phone/mobile number. 
+If a phone number is present, extract it and return ONLY the digits (no spaces, dashes, or words).
+If no phone number is present, return exactly "None".
 
 Message: {last_user_message}
-Phone number:"""
+Phone number (digits only, or "None"):"""
         response = llm.invoke(extract_prompt)
         extracted = response.content.strip()
-        # Clean digits only
-        digits = ''.join(filter(str.isdigit, extracted))
-        if digits and len(digits) >= 10:
-            updates["mobile_number"] = digits
+        
+        # Check if LLM found a phone number
+        if extracted.lower() != "none" and extracted:
+            # Clean to get only digits
+            digits = ''.join(filter(str.isdigit, extracted))
+            # If we have digits, use them (let LLM decide validity)
+            if digits:
+                updates["mobile_number"] = digits
     
-    # Generate summary if both collected but no summary yet
-    current_complaint = updates.get("complaint") or complaint
-    current_mobile = updates.get("mobile_number") or mobile_number
-    if not summary and current_complaint and current_mobile:
-        summary_prompt = f"""Create a concise summary of this customer complaint:
-
-Complaint: {current_complaint}
-Mobile Number: {current_mobile}
-
-Summary:"""
-        response = llm.invoke(summary_prompt)
-        updates["summary"] = response.content.strip()
+    # Immediately update state with any extractions
+    if updates:
+        state = {**state, **updates}
+        # Update local variables to reflect changes
+        complaint = state.get("complaint")
+        mobile_number = state.get("mobile_number")
     
-    # Check for confirmation
-    if summary and confirmation is None and last_user_message:
+    # Check for confirmation if both complaint and mobile are collected
+    current_complaint = complaint  # Use updated complaint from state
+    current_mobile = mobile_number  # Use updated mobile from state
+    if current_complaint and current_mobile and confirmation is None and last_user_message:
         msg_lower = last_user_message.lower()
         if any(word in msg_lower for word in ["yes", "confirm", "correct", "right", "submit"]):
             updates["confirmation"] = True
         elif any(word in msg_lower for word in ["no", "not", "wrong", "incorrect", "cancel"]):
             updates["confirmation"] = False
     
-    # Update state
-    current_state = {**state, **updates}
+    # Apply all updates to state (including confirmation if set)
+    if updates:
+        state = {**state, **updates}
+    
+    # Get current values for response generation
+    current_state = state
     current_complaint = current_state.get("complaint")
     current_mobile = current_state.get("mobile_number")
-    current_summary = current_state.get("summary")
     current_confirmation = current_state.get("confirmation")
     
-    # Generate response
-    system_prompt = """You are a helpful customer service agent collecting complaint information. Be friendly and conversational."""
-    
-    if not current_complaint:
-        instruction = "Ask the customer to describe their complaint."
-    elif not current_mobile:
-        instruction = f"Complaint received. Ask the customer for their mobile/phone number."
-    elif not current_summary:
-        instruction = "You have both the complaint and mobile number. Generate a summary and present it to the customer for confirmation."
-    elif current_confirmation is None:
-        instruction = f"Present this summary to the customer and ask them to confirm if it's correct:\n\n{current_summary}"
-    elif current_confirmation is False:
-        instruction = "The customer declined. Ask if they want to start over or modify the information."
-    elif current_confirmation is True and not current_state.get("submitted", False):
-        instruction = "The customer confirmed. Thank them and inform them that the complaint will be submitted."
-    else:
-        instruction = "Thank the customer for their patience."
+    # Determine which model to use and build prompt
+    # Use mini for simple follow-ups, gpt-4o for complex tasks
+    use_mini = False
     
     # Build conversation history for context
     conversation_history = []
@@ -125,7 +122,28 @@ Summary:"""
         if isinstance(msg, HumanMessage):
             conversation_history.append(f"User: {msg.content}")
         elif isinstance(msg, AIMessage):
-            conversation_history.append(f"Assistant: {msg.content}")
+            conversation_history.append(f"{msg.content}")
+    
+    system_prompt = """You are a helpful customer service agent collecting complaint information. Be friendly and conversational."""
+    
+    if not current_complaint:
+        instruction = "Ask the customer to describe their complaint."
+        use_mini = False  # Use gpt-4o for initial greeting/asking for complaint
+    elif not current_mobile:
+        instruction = f"Complaint received: {current_complaint}\n\nAsk the customer for their mobile/phone number."
+        use_mini = True  # Simple follow-up question
+    elif current_confirmation is None:
+        instruction = f"Complaint: {current_complaint}\nMobile Number: {current_mobile}\n\nPresent a friendly, short summary with bullet points (2-3 points max) of the complaint details, then ask for confirmation to submit it to the system. Be warm and friendly. Ask: 'Would you like me to submit this complaint to our system?'"
+        use_mini = True  # Simple confirmation question
+    elif current_confirmation is False:
+        instruction = "The customer declined the summary. Ask if they want to start over or modify the information."
+        use_mini = True  # Simple follow-up
+    elif current_confirmation is True and not current_state.get("submitted", False):
+        instruction = "The customer confirmed. Thank them and inform them that the complaint will be submitted."
+        use_mini = True  # Simple acknowledgment
+    else:
+        instruction = "Continue the conversation naturally based on the context."
+        use_mini = True
     
     prompt = f"""{system_prompt}
 
@@ -136,30 +154,42 @@ Recent conversation:
 
 Generate a natural, friendly response:"""
     
+    # Use appropriate model
+    model_to_use = llm_mini if use_mini else llm
+    
     try:
-        response = llm.invoke(prompt)
+        response = model_to_use.invoke(prompt)
         response_text = response.content.strip()
         if not response_text:
-            response_text = "I'm here to help you submit your complaint. How can I assist you today?"
+            # If empty, try again with the other model
+            response = llm.invoke(prompt)
+            response_text = response.content.strip()
     except Exception as e:
-        # Fallback response if LLM fails
-        response_text = "I'm here to help you submit your complaint. Could you please describe your issue?"
+        # Try with the other model if first fails
+        try:
+            model_to_use = llm if use_mini else llm_mini
+            response = model_to_use.invoke(prompt)
+            response_text = response.content.strip()
+        except Exception as e2:
+            # Last resort: use gpt-4o
+            response = llm.invoke(prompt)
+            response_text = response.content.strip()
         print(f"Error generating response: {e}")
     
     # Add assistant response to messages
-    new_messages = messages + [AIMessage(content=response_text)]
+    new_messages = state.get("messages", []) + [AIMessage(content=response_text)]
     
+    # Return updated state with all changes
     return {
-        **current_state,
+        **state,
         "messages": new_messages
     }
 
 
-def should_continue(state: AgentState) -> Literal["collect_info", "summarize", "get_confirmation", "submit", "end"]:
+def should_continue(state: AgentState) -> Literal["collect_info", "get_confirmation", "submit", "end"]:
     """Determine next step based on current state"""
     complaint = state.get("complaint")
     mobile_number = state.get("mobile_number")
-    summary = state.get("summary")
     confirmation = state.get("confirmation")
     submitted = state.get("submitted", False)
     
@@ -168,9 +198,6 @@ def should_continue(state: AgentState) -> Literal["collect_info", "summarize", "
     
     if not complaint or not mobile_number:
         return "collect_info"
-    
-    if not summary:
-        return "summarize"
     
     if confirmation is None:
         return "get_confirmation"
@@ -185,12 +212,10 @@ def submit_complaint(state: AgentState) -> AgentState:
     """Submit the complaint (placeholder for now)"""
     complaint = state.get("complaint")
     mobile_number = state.get("mobile_number")
-    summary = state.get("summary")
     
     # TODO: Implement actual submission logic
     print(f"Complaint submitted:")
     print(f"Mobile: {mobile_number}")
-    print(f"Summary: {summary}")
     print(f"Full Complaint: {complaint}")
     
     return {
@@ -217,7 +242,6 @@ def create_complaint_agent():
         should_continue,
         {
             "collect_info": END,  # End after processing, wait for next user input
-            "summarize": END,      # End after processing, wait for next user input
             "get_confirmation": END, # End after processing, wait for next user input
             "submit": "submit",    # Only submit if confirmed
             "end": END
