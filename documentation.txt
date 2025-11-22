@@ -1,0 +1,14 @@
+phone number
+- priorityId: ****
+- sectorId: *****
+- networkId: ****
+- areaId: *****
+- labId: *****
+- commercialBranchCode: ****
+- clientAddress: "حي المعذر الشمالي، RGMA3235، 3235 موسى بن نصير، 6950, Riyadh 12332, Arabia Saudí" 
+
+
+- when user is not registred with the phone number, chatbot will ask the user the  address where the issue happened.
+After that the agent will try to find it using (either Camilia or Google Maps).
+
+- 050555555

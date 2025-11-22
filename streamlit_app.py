@@ -16,6 +16,16 @@ if "agent_state" not in st.session_state:
     st.session_state.agent_state = {
         "complaint": None,
         "mobile_number": None,
+        "is_registered": None,
+        "customer_data": {
+            "priorityId": None,
+            "sectorId": None,
+            "networkId": None,
+            "areaId": None,
+            "labId": None,
+            "commercialBranchCode": None,
+            "clientAddress": None
+        },
         "confirmation": None,
         "submitted": False
     }
@@ -52,6 +62,8 @@ with st.sidebar:
         state_dict = {
             "complaint": st.session_state.agent_state.get("complaint"),
             "mobile_number": st.session_state.agent_state.get("mobile_number"),
+            "is_registered": st.session_state.agent_state.get("is_registered"),
+            "customer_data": st.session_state.agent_state.get("customer_data"),
             "confirmation": st.session_state.agent_state.get("confirmation"),
             "submitted": st.session_state.agent_state.get("submitted", False)
         }
@@ -100,6 +112,16 @@ if prompt := st.chat_input("Type your complaint or question here..."):
                     st.session_state.agent_state = {
                         "complaint": updated_state.get("complaint"),
                         "mobile_number": updated_state.get("mobile_number"),
+                        "is_registered": updated_state.get("is_registered"),
+                        "customer_data": updated_state.get("customer_data", {
+                            "priorityId": None,
+                            "sectorId": None,
+                            "networkId": None,
+                            "areaId": None,
+                            "labId": None,
+                            "commercialBranchCode": None,
+                            "clientAddress": None
+                        }),
                         "confirmation": updated_state.get("confirmation"),
                         "submitted": updated_state.get("submitted", False)
                     }
@@ -124,6 +146,16 @@ if st.button("Clear Chat"):
     st.session_state.agent_state = {
         "complaint": None,
         "mobile_number": None,
+        "is_registered": None,
+        "customer_data": {
+            "priorityId": None,
+            "sectorId": None,
+            "networkId": None,
+            "areaId": None,
+            "labId": None,
+            "commercialBranchCode": None,
+            "clientAddress": None
+        },
         "confirmation": None,
         "submitted": False
     }

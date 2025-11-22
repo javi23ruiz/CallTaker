@@ -26,6 +26,18 @@ def process_user_message(user_input: str, current_state: dict = None) -> Tuple[s
             "messages": [],
             "complaint": None,
             "mobile_number": None,
+            "is_registered": None,
+            "customer_data": {
+                "priorityId": None,
+                "sectorId": None,
+                "networkId": None,
+                "areaId": None,
+                "labId": None,
+                "commercialBranchCode": None,
+                "clientAddress": None
+            },
+            "address_loaded_from_system": None,
+            "address_updated_by_user": None,
             "confirmation": None,
             "submitted": False
         }
@@ -35,6 +47,18 @@ def process_user_message(user_input: str, current_state: dict = None) -> Tuple[s
             "messages": list(current_state.get("messages", [])),  # Copy message list
             "complaint": current_state.get("complaint"),
             "mobile_number": current_state.get("mobile_number"),
+            "is_registered": current_state.get("is_registered"),
+            "customer_data": current_state.get("customer_data", {
+                "priorityId": None,
+                "sectorId": None,
+                "networkId": None,
+                "areaId": None,
+                "labId": None,
+                "commercialBranchCode": None,
+                "clientAddress": None
+            }),
+            "address_loaded_from_system": current_state.get("address_loaded_from_system"),
+            "address_updated_by_user": current_state.get("address_updated_by_user"),
             "confirmation": current_state.get("confirmation"),
             "submitted": current_state.get("submitted", False)
         }
@@ -63,6 +87,18 @@ def process_user_message(user_input: str, current_state: dict = None) -> Tuple[s
     updated_state = {
         "complaint": result.get("complaint"),
         "mobile_number": result.get("mobile_number"),
+        "is_registered": result.get("is_registered"),
+        "customer_data": result.get("customer_data", {
+            "priorityId": None,
+            "sectorId": None,
+            "networkId": None,
+            "areaId": None,
+            "labId": None,
+            "commercialBranchCode": None,
+            "clientAddress": None
+        }),
+        "address_loaded_from_system": result.get("address_loaded_from_system"),
+        "address_updated_by_user": result.get("address_updated_by_user"),
         "confirmation": result.get("confirmation"),
         "submitted": result.get("submitted", False),
         "messages": messages[-10:] if len(messages) > 10 else messages  # Keep only last 10 messages
