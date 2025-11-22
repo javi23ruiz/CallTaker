@@ -1,5 +1,5 @@
 """
-FastAPI Backend for Camila Call Taker
+FastAPI Backend for Alora Call Taker
 Wraps the LangGraph agent and provides REST API endpoints
 """
 
@@ -15,7 +15,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.agent.utils import process_user_message
 
-app = FastAPI(title="Camila Call Taker API", version="1.0.0")
+app = FastAPI(title="Alora Call Taker API", version="1.0.0")
 
 # Configure CORS
 app.add_middleware(
@@ -49,7 +49,7 @@ class SessionState(BaseModel):
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"status": "healthy", "service": "Camila Call Taker API"}
+    return {"status": "healthy", "service": "Alora Call Taker API"}
 
 
 @app.post("/api/chat", response_model=ChatResponse)

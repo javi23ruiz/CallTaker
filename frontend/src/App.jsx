@@ -2,6 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import AvatarPanel from './components/AvatarPanel'
+import StatePanel from './components/StatePanel'
+
+// Configure axios base URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 function App() {
   const [messages, setMessages] = useState([])
@@ -9,6 +13,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [sessionId, setSessionId] = useState('')
   const [agentState, setAgentState] = useState(null)
+  const [lastAIMessage, setLastAIMessage] = useState(null)
   const chatContainerRef = useRef(null)
   const textareaRef = useRef(null)
 
@@ -44,24 +49,41 @@ function App() {
     setIsLoading(true)
 
     try {
-      const response = await axios.post('/api/chat', {
+      console.log('Sending message to backend:', { session_id: sessionId, message: userMessage })
+      console.log('API URL:', `${API_URL}/api/chat`)
+      
+      const response = await axios.post(`${API_URL}/api/chat`, {
         session_id: sessionId,
         message: userMessage
       })
 
+      console.log('Backend response:', response.data)
+
+      const aiResponse = response.data.response
+
       // Add AI response to chat
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: response.data.response 
+        content: aiResponse 
       }])
+      
+      // Set the AI message for avatar to speak
+      setLastAIMessage(aiResponse)
+      console.log('Avatar should speak:', aiResponse)
       
       setAgentState(response.data.agent_state)
 
     } catch (error) {
       console.error('Error sending message:', error)
+      console.error('Error details:', error.response?.data || error.message)
+      
+      const errorMessage = error.response?.data?.detail 
+        || error.message 
+        || 'Sorry, I encountered an error. Please try again.'
+      
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'Sorry, I encountered an error. Please try again.' 
+        content: `Error: ${errorMessage}. Please check if the backend is running.` 
       }])
     } finally {
       setIsLoading(false)
@@ -77,14 +99,19 @@ function App() {
 
   const clearChat = () => {
     setMessages([])
+    setLastAIMessage(null)
     const newSessionId = uuidv4()
     setSessionId(newSessionId)
-    axios.post('/api/session/clear', null, { params: { session_id: sessionId } })
+    axios.post(`${API_URL}/api/session/clear`, null, { params: { session_id: sessionId } })
+      .catch(err => console.log('Clear session error:', err))
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#F9FAFB' }}>
-      {/* Chat Section - Left Side */}
+      {/* State Panel - Left Side */}
+      <StatePanel agentState={agentState} />
+      
+      {/* Chat Section - Center */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
         <header style={{
@@ -102,7 +129,7 @@ function App() {
             gap: '8px',
             color: '#374151'
           }}>
-            <span style={{ cursor: 'pointer', opacity: 0.6 }}>☰</span> Camila AI
+            <span style={{ cursor: 'pointer', opacity: 0.6 }}>☰</span> Alora AI
           </div>
           <div 
             onClick={clearChat}
@@ -138,7 +165,7 @@ function App() {
               marginTop: '50px',
               fontSize: '15px'
             }}>
-              <p style={{ marginBottom: '8px', fontSize: '18px' }}>👋 Hi! I'm Camila</p>
+              <p style={{ marginBottom: '8px', fontSize: '18px' }}>👋 Hi! I'm Alora</p>
               <p>I'm here to help you report technical issues and complaints.</p>
             </div>
           )}
@@ -168,7 +195,7 @@ function App() {
                   fontSize: '14px',
                   boxShadow: '0 2px 10px rgba(99, 102, 241, 0.3)'
                 }}>
-                  C
+                  A
                 </div>
               )}
               
@@ -206,7 +233,7 @@ function App() {
                 fontWeight: 'bold',
                 fontSize: '14px'
               }}>
-                C
+                A
               </div>
               <div style={{
                 padding: '12px 16px',
@@ -246,7 +273,7 @@ function App() {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Message Camila..."
+              placeholder="Message Alora..."
               style={{
                 width: '100%',
                 border: 'none',
@@ -283,12 +310,14 @@ function App() {
           paddingBottom: '12px',
           marginTop: '-10px'
         }}>
-          Camila can make mistakes. Check important info.
+          Alora can make mistakes. Check important info.
         </div>
       </div>
 
       {/* Avatar Panel - Right Side */}
-      <AvatarPanel currentMessage={messages[messages.length - 1]?.content} />
+      <AvatarPanel 
+        currentMessage={lastAIMessage}
+      />
     </div>
   )
 }

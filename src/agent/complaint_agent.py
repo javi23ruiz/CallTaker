@@ -30,14 +30,14 @@ llm_mini = ChatOpenAI(
 
 # In-memory dictionary for registered users
 REGISTERED_USERS = {
-    "050555555": {
+    "0123456789": {
         "priorityId": "****",
         "sectorId": "*****",
         "networkId": "****",
         "areaId": "*****",
         "labId": "*****",
         "commercialBranchCode": "****",
-        "clientAddress": "حي المعذر الشمالي، RGMA3235، 3235 موسى بن نصير، 6950, Riyadh 12332, Arabia Saudí"
+        "clientAddress": "28 Mohyee Al Din Abd Al Hamid, Al Manteqah Ath Thamenah, Nasr City, Cairo Governorate 4441512, Egypt"
     }
 }
 
@@ -273,7 +273,7 @@ Address:"""
         elif isinstance(msg, AIMessage):
             conversation_history.append(f"{msg.content}")
     
-    system_prompt = """You are Camila, a customer service AI assistant. Your role is to help customers report technical issues and complaints.
+    system_prompt = """You are Alora, a customer service AI assistant. Your role is to help customers report technical issues and complaints.
 
 Communication Style:
 - Be warm, empathetic, and professional
@@ -290,11 +290,11 @@ Always:
 - Explain next steps after submission"""
     
     if not current_complaint:
-        instruction = """Greet the customer warmly. Introduce yourself as Camila, their customer service AI assistant. 
+        instruction = """Greet the customer warmly. Introduce yourself as Alora, their customer service AI assistant. 
 Explain that you're here to help them report any technical issues or complaints they're facing.
 Then ask them to describe the issue they're experiencing.
 
-Example tone: "Hi, good morning! I'm Camila, your customer service AI assistant. I'm here to help you report any technical issues you're facing today."
+Example tone: "Hi, good morning! I'm Alora, your customer service AI assistant. I'm here to help you report any technical issues you're facing today."
 
 Be warm, professional, and welcoming."""
         use_mini = False  # Use gpt-4o for initial greeting/asking for complaint

@@ -4,15 +4,18 @@ function AvatarPanel({ currentMessage }) {
   const [isLoading, setIsLoading] = useState(false)
   const [debug, setDebug] = useState('')
   const [sessionData, setSessionData] = useState(null)
+  const [lastSpokenMessage, setLastSpokenMessage] = useState(null)
   const videoRef = useRef(null)
   const peerConnectionRef = useRef(null)
 
-  // Speak when new message arrives
+  // Speak when new AI message arrives (only if different from last spoken)
   useEffect(() => {
-    if (currentMessage && sessionData) {
+    if (currentMessage && sessionData && currentMessage.trim() && currentMessage !== lastSpokenMessage) {
+      console.log('Avatar speaking:', currentMessage.substring(0, 50) + '...')
       speakText(currentMessage)
+      setLastSpokenMessage(currentMessage)
     }
-  }, [currentMessage])
+  }, [currentMessage, sessionData])
 
   const startAvatar = async () => {
     setIsLoading(true)
@@ -49,8 +52,8 @@ function AvatarPanel({ currentMessage }) {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          quality: 'medium',
-          avatar_name: 'Anna_public_3_20240108',
+          quality: 'low',  // Use 'low' for faster/more reliable connection
+          avatar_name: 'Katya_ProfessionalLook2_public',  // Back to Anna - confirmed working
           voice: {
             voice_id: 'e0cc82c22f414c95b1f25696c732f058'
           }
@@ -63,42 +66,89 @@ function AvatarPanel({ currentMessage }) {
         throw new Error(session.message || JSON.stringify(session) || 'Failed to create session')
       }
       
-      setSessionData({ session_id: session.data.session_id, token })
-      setDebug('Session: ' + session.data.session_id)
+      const sessionId = session.data.session_id
+      setSessionData({ session_id: sessionId, token })
+      setDebug('Session: ' + sessionId)
       console.log('Session created successfully')
+      console.log('Session data:', session.data)
 
       // Step 3: Setup WebRTC
-      const pc = new RTCPeerConnection({ iceServers: session.data.ice_servers2 })
+      setDebug('Setting up WebRTC...')
+      
+      const iceServers = session.data.ice_servers2 || session.data.ice_servers || [
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
+      
+      const pc = new RTCPeerConnection({ 
+        iceServers: iceServers,
+        iceTransportPolicy: 'all'
+      })
       peerConnectionRef.current = pc
 
       pc.ontrack = (event) => {
+        setDebug('Video track received!')
+        console.log('Track event:', event)
         if (videoRef.current && event.streams[0]) {
           videoRef.current.srcObject = event.streams[0]
+          videoRef.current.play().catch(e => console.log('Play error:', e))
+          setDebug('Video stream connected')
         }
+      }
+      
+      pc.onconnectionstatechange = () => {
+        const state = pc.connectionState
+        setDebug(`Connection: ${state}`)
+        console.log('Connection state:', state)
+        
+        if (state === 'connected') {
+          setDebug('Avatar connected!')
+        } else if (state === 'failed' || state === 'disconnected') {
+          setDebug('Connection failed - retrying...')
+        }
+      }
+      
+      pc.oniceconnectionstatechange = () => {
+        console.log('ICE connection state:', pc.iceConnectionState)
       }
 
       pc.onicecandidate = async ({ candidate }) => {
         if (candidate) {
-          await fetch('https://api.heygen.com/v1/streaming.ice', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-              session_id: session.data.session_id,
-              candidate
+          console.log('Sending ICE candidate')
+          try {
+            await fetch('https://api.heygen.com/v1/streaming.ice', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                session_id: session.data.session_id,
+                candidate: {
+                  candidate: candidate.candidate,
+                  sdpMid: candidate.sdpMid,
+                  sdpMLineIndex: candidate.sdpMLineIndex
+                }
+              })
             })
-          })
+          } catch (error) {
+            console.error('ICE error:', error)
+          }
         }
       }
 
-      await pc.setRemoteDescription(session.data.sdp)
+      // Set remote description
+      const remoteSdp = new RTCSessionDescription(session.data.sdp)
+      await pc.setRemoteDescription(remoteSdp)
+      setDebug('Remote SDP set')
+      
+      // Create answer
       const answer = await pc.createAnswer()
       await pc.setLocalDescription(answer)
+      setDebug('Local SDP set')
 
       // Step 4: Start the session
-      await fetch('https://api.heygen.com/v1/streaming.start', {
+      setDebug('Starting session...')
+      const startRes = await fetch('https://api.heygen.com/v1/streaming.start', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,6 +159,9 @@ function AvatarPanel({ currentMessage }) {
           sdp: answer
         })
       })
+      
+      const startResult = await startRes.json()
+      console.log('Start session result:', startResult)
 
       setDebug('Avatar started!')
       setIsLoading(false)
@@ -121,23 +174,58 @@ function AvatarPanel({ currentMessage }) {
   }
 
   const speakText = async (text) => {
-    if (!sessionData) return
+    if (!sessionData) {
+      console.log('No session - cannot speak')
+      return
+    }
+    
+    if (!text || !text.trim()) {
+      console.log('No text to speak')
+      return
+    }
     
     try {
-      await fetch('https://api.heygen.com/v1/streaming.task', {
+      console.log('=== SENDING TO HEYGEN ===')
+      console.log('Full text to speak:', text)
+      console.log('Session ID:', sessionData.session_id)
+      
+      setDebug('Speaking...')
+      
+      const payload = {
+        session_id: sessionData.session_id,
+        text: text,
+        task_type: 'repeat'  // Use 'repeat' for exact text reading, not 'talk' which may use chat
+      }
+      
+      console.log('Payload:', JSON.stringify(payload, null, 2))
+      
+      const response = await fetch('https://api.heygen.com/v1/streaming.task', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${sessionData.token}`
         },
-        body: JSON.stringify({
-          session_id: sessionData.session_id,
-          text: text,
-          task_type: 'talk'
-        })
+        body: JSON.stringify(payload)
       })
+      
+      const result = await response.json()
+      console.log('HeyGen speak response:', JSON.stringify(result, null, 2))
+      
+      // Check for error in response
+      if (result.error) {
+        console.error('HeyGen API error:', result.error)
+        setDebug('HeyGen error: ' + result.error.message)
+      }
+      
+      if (result.data) {
+        setDebug('✓ Sent to avatar: ' + text.substring(0, 50) + '...')
+      } else if (result.error) {
+        setDebug('Error: ' + result.error.message)
+        console.error('HeyGen error:', result.error)
+      }
     } catch (error) {
       console.error('Speak error:', error)
+      setDebug('Speak error: ' + error.message)
     }
   }
 
@@ -163,6 +251,7 @@ function AvatarPanel({ currentMessage }) {
     }
     
     setSessionData(null)
+    setLastSpokenMessage(null)
     setDebug('Stopped')
   }
 
